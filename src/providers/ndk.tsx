@@ -48,7 +48,9 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
         const defaultRelays = [
           'wss://relay.damus.io',
           'wss://nos.lol',
-          'wss://relay.nostr.band'
+          'wss://relay.nostr.band',
+          'wss://relay.nostr.wine',
+          'wss://relay.mostr.pub'
         ];
         readRelays.push(...defaultRelays);
         writeRelays.push(...defaultRelays);
@@ -59,10 +61,17 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
       });
 
       try {
-        // Connect to the relays
-        await ndkInstance.connect();
+        // Connect to the relays with timeout
+        const connectPromise = ndkInstance.connect();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout')), 10000)
+        );
+        
+        await Promise.race([connectPromise, timeoutPromise]);
         setIsConnected(true);
       } catch (error) {
+        console.warn('Failed to connect to some relays:', error);
+        // Still set NDK instance even if some relays fail
         setIsConnected(false);
       }
 
