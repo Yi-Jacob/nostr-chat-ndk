@@ -16,35 +16,29 @@ interface NDKContextType {
   createSigner: (privKey: string | any) => Promise<any>;
 }
 
-// Create a context to store the NDK instance
 const NDKContext = createContext<NDKContextType>({ 
   canPublishEvents: false, 
   isConnected: false,
   createSigner: async () => null
 });
-
-// NDKProvider function component
 const NDKProvider = ({ children }: PropsWithChildren) => {
   const [ndk, setNDK] = useState<NDK | undefined>(undefined);
   const [canPublishEvents, setCanPublishEvents] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [relays, setRelays] = useState<RelayDict>({});
 
-  // Load relays from local storage
   useEffect(() => {
     getRelays().then(r => {
       setRelays(r);
     });
   }, []);
 
-  // Initialize NDK instance
   useEffect(() => {
     const initNDK = async () => {
       const readRelays = Object.keys(relays).filter(r => relays[r].read);
       const writeRelays = Object.keys(relays).filter(r => relays[r].write);
       
       if (readRelays.length === 0) {
-        // Use default relays if none configured
         const defaultRelays = [
           'wss://relay.damus.io',
           'wss://nos.lol',
@@ -61,7 +55,6 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
       });
 
       try {
-        // Connect to the relays with timeout
         const connectPromise = ndkInstance.connect();
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Connection timeout')), 10000)
@@ -71,11 +64,9 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
         setIsConnected(true);
       } catch (error) {
         console.warn('Failed to connect to some relays:', error);
-        // Still set NDK instance even if some relays fail
         setIsConnected(false);
       }
 
-      // Set the NDK instance in the state
       setNDK(ndkInstance);
     };
 
@@ -84,11 +75,9 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
     }
   }, [relays]);
 
-  // Create signer based on private key or NIP-07
   const createSigner = async (privKey: string | any) => {
     if (!ndk) return;
 
-    // Handle case where privKey might be an object or nsec string
     let actualPrivKey = privKey;
     
     if (typeof privKey === 'object' && privKey !== null) {
@@ -97,7 +86,6 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
     
     if (typeof privKey === 'string' && privKey.startsWith('nsec')) {
       try {
-        // Decode nsec to hex if it's still in nsec format
         const { nip19 } = await import('util/nostr-utils');
         const dec = nip19.decode(privKey);
         actualPrivKey = Array.from(dec.data).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -130,7 +118,6 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
     return null;
   };
 
-  // Expose signer creation method
   const contextValue: NDKContextType = {
     ndk,
     canPublishEvents,
@@ -138,7 +125,6 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
     createSigner,
   };
 
-  // Return the provider with the NDK instance
   return (
     <NDKContext.Provider value={contextValue}>
       {ndk ? children : null}
@@ -146,7 +132,6 @@ const NDKProvider = ({ children }: PropsWithChildren) => {
   );
 };
 
-// Custom hook to access NDK instance from the context
 const useNDK = () => {
   const context = useContext(NDKContext);
   if (context === undefined) {

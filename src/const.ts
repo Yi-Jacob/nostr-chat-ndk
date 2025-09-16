@@ -6,7 +6,7 @@ export const DEFAULT_RELAYS: RelayDict = {
     'wss://relay.damus.io': {read: true, write: true},
     'wss://nos.lol': {read: true, write: true},
     'wss://relay.nostr.band': {read: true, write: true},
-    'wss://relay.snort.social': {read: false, write: false}, // Disabled due to connection issues
+    'wss://relay.snort.social': {read: false, write: false},
 };
 
 export const MESSAGE_PER_PAGE = 30;

@@ -95,10 +95,8 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     this.priv = priv;
     this.pub = pub;
 
-    // Ensure signer is available
     this.ensureSigner();
 
-    // Load relays asynchronously and then initialize
     this.loadRelaysAndInit();
   }
 
@@ -110,19 +108,16 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     try {
       let actualPrivKey = this.priv;
       
-      // Handle nsec format
       if (typeof this.priv === 'string' && this.priv.startsWith('nsec')) {
         const { nip19 } = await import('util/nostr-utils');
         const dec = nip19.decode(this.priv);
         actualPrivKey = Array.from(dec.data).map(b => b.toString(16).padStart(2, '0')).join('');
       }
       
-      // Validate the private key format
       if (typeof actualPrivKey !== 'string' || actualPrivKey.length !== 64) {
         return;
       }
       
-      // Ensure it's a valid hex string
       if (!/^[0-9a-fA-F]{64}$/.test(actualPrivKey)) {
         return;
       }
@@ -130,24 +125,18 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       const signer = new NDKPrivateKeySigner(actualPrivKey);
       this.ndk.signer = signer;
     } catch (error) {
-      // Failed to create signer
     }
   }
 
   private async loadRelaysAndInit() {
     try {
-      // Wait a bit for NDK to be fully initialized
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Get relays from NDK instance instead of local storage
-      // This ensures we use the same relays that NDK is connected to
       if (this.ndk && this.ndk.pool) {
-        // Get all relay URLs from the NDK pool
         const relayUrls = Array.from(this.ndk.pool.relays.keys()) as string[];
         this.readRelays = relayUrls;
         this.writeRelays = relayUrls;
       } else {
-        // Fallback to local storage if NDK pool is not available
         const relays = await getRelays();
         this.readRelays = Object.keys(relays).filter(r => relays[r].read);
         this.writeRelays = Object.keys(relays).filter(r => relays[r].write);
@@ -159,7 +148,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
         await this.init();
       }
     } catch (error) {
-      // Failed to load relays
       this.emit(RavenEvents.Ready);
     }
   }
@@ -168,25 +156,22 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     let userEvents: NDKEvent[] = [];
     
     try {
-      // 1- Get all events created by the user
       userEvents = await this.fetchEventsWithTimeout([{
         authors: [this.pub],
-      }], 30000); // 30 second timeout
+      }], 30000);
       
       userEvents
-        .filter(e => e.kind !== NDKKind.ChannelMessage) // public messages come with channel requests
+        .filter(e => e.kind !== NDKKind.ChannelMessage)
         .forEach(e => this.pushToEventBuffer(e));
       this.emit(RavenEvents.Ready);
 
-      // 2- Get all incoming DMs to the user
       const incomingDms = await this.fetchEventsWithTimeout([{
         kinds: [NDKKind.EncryptedDirectMessage],
         '#p': [this.pub]
-      }], 30000); // 30 second timeout
+      }], 30000);
       incomingDms.forEach(e => this.pushToEventBuffer(e));
       this.emit(RavenEvents.DMsDone);
 
-      // 3- Get channels messages
       const deletions = userEvents
         .filter(x => x.kind === NDKKind.EventDeletion)
         .map(x => this.findTagValue(x, 'e'))
@@ -209,7 +194,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       }
 
 
-      // Get real channel list
       const channels = await this.fetchEvents([
         ...chunk(channelIds, 10).map(x => ({
           kinds: [NDKKind.ChannelCreation],
@@ -217,8 +201,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
         }))
       ]);
       channels.forEach(x => this.pushToEventBuffer(x));
-
-      // Get messages for all channels found
       const filters = channels.map(x => x.id).map(x => ([
         {
           kinds: [NDKKind.ChannelMetadata, NDKKind.EventDeletion],
@@ -241,7 +223,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
 
       this.emit(RavenEvents.SyncDone);
     } catch (error) {
-      // Emit ready even if there's an error to prevent hanging
       this.emit(RavenEvents.Ready);
       this.emit(RavenEvents.DMsDone);
       this.emit(RavenEvents.SyncDone);
@@ -382,7 +363,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       tags.push(['e', rootId, '', 'reply']);
     }
 
-    // Add mentions
     mentions.forEach(mention => {
       tags.push(['p', mention]);
     });
@@ -416,7 +396,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     event.tags = tags;
 
     try {
-      // Encrypt the message
       const encryptedContent = await this.encrypt(peer, message);
       event.content = encryptedContent;
 
@@ -448,7 +427,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
         ...this.normalizeMetadata(meta)
       };
 
-      // Emit the channel creation event to update the UI
       this.emit(RavenEvents.ChannelCreation, [channel]);
 
       return channel;
@@ -480,7 +458,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
 
       this.emit(RavenEvents.ProfileUpdate, profiles);
     } catch (error) {
-      // Error loading profiles
     }
   }
 
@@ -494,32 +471,27 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     }
 
     try {
-      // Create profile metadata event
-      const event = {
-        kind: NDKKind.Metadata,
-        content: JSON.stringify({
-          name: profile.name,
-          about: profile.about,
-          picture: profile.picture
-        }),
-        created_at: Math.floor(Date.now() / 1000),
-        pubkey: this.pub,
-        tags: []
-      };
+      const event = new NDKEvent(this.ndk);
+      event.kind = NDKKind.Metadata;
+      event.content = JSON.stringify({
+        name: profile.name,
+        about: profile.about,
+        picture: profile.picture
+      });
+      event.created_at = Math.floor(Date.now() / 1000);
+      event.tags = [];
 
-      // Sign and publish the event
-      const signedEvent = await this.ndk.signer.sign(event);
+      await event.sign();
       const relaySet = this.createRelaySet(this.writeRelays);
       
       if (relaySet) {
-        await this.ndk.publish(signedEvent, relaySet);
+        await event.publish(relaySet);
         
-        // Emit profile update event
         const normalizedProfile = this.normalizeMetadata(profile);
         const updatedProfile: Profile = {
-          id: signedEvent.id,
+          id: event.id,
           creator: this.pub,
-          created: event.created_at,
+          created: event.created_at || Math.floor(Date.now() / 1000),
           ...normalizedProfile
         };
         
@@ -533,7 +505,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
   public startListening(): void {
     if (!this.ndk) return;
 
-    // Listen for new events
     const filter: NDKFilter = {
       kinds: [
         NDKKind.Text,
@@ -598,7 +569,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
   }
 
   private pushToEventBuffer(event: NDKEvent): void {
-    // Check if this event is already in the buffer to prevent duplicates
     const isDuplicate = this.eventQueueBuffer.some(e => e.id === event.id);
     if (isDuplicate) {
       return;
@@ -617,7 +587,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     this.eventQueue = [...this.eventQueueBuffer];
     this.eventQueueBuffer = [];
 
-    // Process different event types
     await this.processProfiles();
     await this.processPublicMessages();
     await this.processDirectMessages();
@@ -671,7 +640,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
         };
       });
 
-    // Deduplicate messages by ID to prevent duplicates
     const uniqueMessages = publicMessages.filter((msg, index, self) => 
       index === self.findIndex(m => m.id === msg.id)
     );
@@ -865,7 +833,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     }
   }
 
-  // Utility methods
   private findTagValue(event: NDKEvent, tagName: string): string | undefined {
     const tag = event.tags.find(t => t[0] === tagName);
     return tag?.[1];
@@ -893,7 +860,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
     try {
       const parsed = JSON.parse(content);
       
-      // Normalize metadata like the original project
       return this.normalizeMetadata(parsed);
     } catch (error) {
       return null;
@@ -919,7 +885,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
   }
 
   public async updateLeftChannelList(channelIds: string[]): Promise<void> {
-    // Simplified implementation
     return;
   }
 
@@ -954,7 +919,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
   public listenMessages(messageIds: string[], relIds: string[]): void {
     if (!this.ndk || !this.relaysLoaded) return;
 
-    // Stop existing message listener subscription
     const existingSub = this.subscriptions.find(sub => 
       sub.subId === 'messageListener'
     );
@@ -988,7 +952,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       relaySet: relaySet
     });
 
-    // Store subscription with a custom ID for tracking
     (subscription as any).subId = 'messageListener';
     this.subscriptions.push(subscription);
 
@@ -1024,7 +987,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       relaySet: relaySet
     });
 
-    // Store subscription with a custom ID for tracking
     (subscription as any).subId = `channel-${id}`;
     this.subscriptions.push(subscription);
 
@@ -1148,14 +1110,10 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
   }
 
   private async encrypt(pubkey: string, message: string): Promise<string> {
-    // This would need to be implemented with proper encryption
-    // For now, return the message as-is (not encrypted)
     return message;
   }
 
   private async decrypt(pubkey: string, encryptedMessage: string): Promise<string> {
-    // This would need to be implemented with proper decryption
-    // For now, return the message as-is (not decrypted)
     return encryptedMessage;
   }
 
@@ -1178,7 +1136,6 @@ class NDKRaven extends TypedEventEmitter<RavenEvents, EventHandlerMap> {
       const relaySet = this.createRelaySet(this.writeRelays);
       await event.publish(relaySet);
 
-      // Emit channel update event
       const updatedChannel: ChannelUpdate = {
         channelId: channel.id,
         ...channel,
