@@ -19,7 +19,7 @@ Once you enter NostrChat you can chat in the global chat, or create your own cha
 
 Install dependencies
 ```bash
-$ yarn 
+$ yarn install
 ```
 
 Start 
